@@ -1,0 +1,285 @@
+
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font-sans); }
+  .container { padding: 1rem 0; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+  .controls input { width: 80px; padding: 0 10px; height: 36px; font-size: 14px; border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md); background: var(--color-background-primary); color: var(--color-text-primary); outline: none; }
+  .controls input:focus { border-color: var(--color-border-primary); }
+  .btn { height: 36px; padding: 0 16px; font-size: 14px; border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md); background: transparent; color: var(--color-text-primary); cursor: pointer; transition: background .15s; white-space: nowrap; }
+  .btn:hover { background: var(--color-background-secondary); }
+  .btn:active { transform: scale(.98); }
+  .btn-del { color: var(--color-text-danger); border-color: var(--color-border-danger, var(--color-border-secondary)); }
+  .btn-find { color: var(--color-text-info); border-color: var(--color-border-info, var(--color-border-secondary)); }
+  .msg { font-size: 13px; color: var(--color-text-secondary); min-height: 20px; margin-bottom: 8px; transition: color .2s; }
+  .msg.ok { color: var(--color-text-success); }
+  .msg.err { color: var(--color-text-danger); }
+  .msg.info { color: var(--color-text-info); }
+  .canvas-wrap { width: 100%; overflow-x: auto; border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); background: var(--color-background-secondary); min-height: 200px; }
+  canvas { display: block; }
+  .examples { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
+  .examples span { font-size: 12px; color: var(--color-text-secondary); }
+  .pill { font-size: 12px; padding: 3px 10px; border: 0.5px solid var(--color-border-tertiary); border-radius: 999px; background: transparent; color: var(--color-text-secondary); cursor: pointer; }
+  .pill:hover { background: var(--color-background-secondary); }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--color-text-secondary); margin-top: 8px; flex-wrap: wrap; }
+  .leg-item { display: flex; align-items: center; gap: 5px; }
+  .leg-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+</style>
+<div class="container">
+  <h2 class="sr-only">Árvore Binária de Busca interativa</h2>
+  <div class="examples">
+    <span>Exemplo:</span>
+    <button class="pill" onclick="loadExample([50,30,70,20,40,60,80])">Balanceada</button>
+    <button class="pill" onclick="loadExample([10,20,30,40,50])">Degenerada</button>
+    <button class="pill" onclick="loadExample([])">Limpar</button>
+  </div>
+  <div class="controls">
+    <input type="number" id="val" placeholder="Valor" min="-999" max="999" />
+    <button class="btn" onclick="doInsert()"><i class="ti ti-plus" aria-hidden="true"></i> Inserir</button>
+    <button class="btn btn-find" onclick="doSearch()"><i class="ti ti-search" aria-hidden="true"></i> Buscar</button>
+    <button class="btn btn-del" onclick="doDelete()"><i class="ti ti-trash" aria-hidden="true"></i> Remover</button>
+  </div>
+  <div class="msg" id="msg"></div>
+  <div class="canvas-wrap"><canvas id="c"></canvas></div>
+  <div class="legend">
+    <div class="leg-item"><span class="leg-dot" style="background:#534AB7"></span>Normal</div>
+    <div class="leg-item"><span class="leg-dot" style="background:#1D9E75"></span>Encontrado / Inserido</div>
+    <div class="leg-item"><span class="leg-dot" style="background:#EF9F27"></span>Caminho de busca</div>
+    <div class="leg-item"><span class="leg-dot" style="background:#D85A30"></span>Removido</div>
+  </div>
+</div>
+<script>
+  const NODE_R = 22, GAP_Y = 72;
+  let root = null;
+  let highlighted = {}; // nodeId -> 'found'|'path'|'removed'
+  let animFrame = null;
+
+  class Node {
+    constructor(v) { this.v = v; this.l = null; this.r = null; this.id = Math.random(); }
+  }
+
+  function insert(node, v) {
+    if (!node) return new Node(v);
+    if (v < node.v) node.l = insert(node.l, v);
+    else if (v > node.v) node.r = insert(node.r, v);
+    return node;
+  }
+
+  function insertPath(node, v, path = []) {
+    if (!node) return path;
+    path.push(node.id);
+    if (v < node.v) return insertPath(node.l, v, path);
+    if (v > node.v) return insertPath(node.r, v, path);
+    return path;
+  }
+
+  function search(node, v, path = []) {
+    if (!node) return { found: false, path };
+    path.push(node.id);
+    if (v === node.v) return { found: true, node, path };
+    if (v < node.v) return search(node.l, v, path);
+    return search(node.r, v, path);
+  }
+
+  function minNode(node) { while (node.l) node = node.l; return node; }
+
+  function removeNode(node, v, path = []) {
+    if (!node) return { node: null, removed: false, path };
+    path.push(node.id);
+    if (v < node.v) { let r = removeNode(node.l, v, path); node.l = r.node; return { node, removed: r.removed, path, removedId: r.removedId }; }
+    if (v > node.v) { let r = removeNode(node.r, v, path); node.r = r.node; return { node, removed: r.removed, path, removedId: r.removedId }; }
+    const rid = node.id;
+    if (!node.l) return { node: node.r, removed: true, path, removedId: rid };
+    if (!node.r) return { node: node.l, removed: true, path, removedId: rid };
+    const succ = minNode(node.r);
+    node.v = succ.v;
+    let r2 = removeNode(node.r, succ.v, []);
+    node.r = r2.node;
+    return { node, removed: true, path, removedId: rid };
+  }
+
+  function computePositions(node, depth, left, right, positions) {
+    if (!node) return;
+    const x = (left + right) / 2, y = depth * GAP_Y + NODE_R + 10;
+    positions[node.id] = { x, y, node };
+    computePositions(node.l, depth + 1, left, (left + right) / 2, positions);
+    computePositions(node.r, depth + 1, (left + right) / 2, right, positions);
+  }
+
+  function treeWidth(node, depth) {
+    if (!node) return 0;
+    return Math.max(treeWidth(node.l, depth+1), treeWidth(node.r, depth+1), depth === 0 ? 0 : 0) + 1;
+  }
+
+  function treeDepth(node) {
+    if (!node) return 0;
+    return 1 + Math.max(treeDepth(node.l), treeDepth(node.r));
+  }
+
+  function countNodes(node) {
+    if (!node) return 0;
+    return 1 + countNodes(node.l) + countNodes(node.r);
+  }
+
+  function draw() {
+    const canvas = document.getElementById('c');
+    const wrap = canvas.parentElement;
+    const n = countNodes(root);
+    const depth = treeDepth(root);
+    const minW = Math.max(600, n * NODE_R * 3.2);
+    const h = Math.max(200, depth * GAP_Y + NODE_R * 2 + 30);
+    canvas.width = minW; canvas.height = h;
+    wrap.style.minHeight = h + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!root) {
+      ctx.fillStyle = 'var(--color-text-secondary, #888)';
+      ctx.font = '14px var(--font-sans, sans-serif)';
+      ctx.textAlign = 'center';
+      ctx.fillText('Árvore vazia — insira um valor', minW / 2, h / 2);
+      return;
+    }
+
+    const positions = {};
+    computePositions(root, 0, 0, minW, positions);
+
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    const edgeColor = dark ? 'rgba(200,200,200,0.18)' : 'rgba(0,0,0,0.13)';
+    const pathEdge = dark ? 'rgba(239,159,39,0.5)' : 'rgba(239,159,39,0.5)';
+
+    // Edges
+    function drawEdges(node) {
+      if (!node) return;
+      const p = positions[node.id];
+      if (node.l) {
+        const c = positions[node.l.id];
+        const isHighlighted = highlighted[node.id] && highlighted[node.l.id];
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(c.x, c.y);
+        ctx.strokeStyle = isHighlighted ? pathEdge : edgeColor;
+        ctx.lineWidth = isHighlighted ? 2 : 1.5;
+        ctx.stroke();
+        drawEdges(node.l);
+      }
+      if (node.r) {
+        const c = positions[node.r.id];
+        const isHighlighted = highlighted[node.id] && highlighted[node.r.id];
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(c.x, c.y);
+        ctx.strokeStyle = isHighlighted ? pathEdge : edgeColor;
+        ctx.lineWidth = isHighlighted ? 2 : 1.5;
+        ctx.stroke();
+        drawEdges(node.r);
+      }
+    }
+    drawEdges(root);
+
+    // Nodes
+    function drawNode(node) {
+      if (!node) return;
+      const { x, y } = positions[node.id];
+      const state = highlighted[node.id];
+      let fill, stroke, textColor;
+      if (state === 'found') { fill = '#1D9E75'; stroke = '#0F6E56'; textColor = '#fff'; }
+      else if (state === 'path') { fill = '#EF9F27'; stroke = '#BA7517'; textColor = '#fff'; }
+      else if (state === 'removed') { fill = '#D85A30'; stroke = '#993C1D'; textColor = '#fff'; }
+      else {
+        fill = dark ? '#3C3489' : '#EEEDFE';
+        stroke = dark ? '#AFA9EC' : '#534AB7';
+        textColor = dark ? '#EEEDFE' : '#26215C';
+      }
+      ctx.beginPath();
+      ctx.arc(x, y, NODE_R, 0, Math.PI * 2);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = textColor;
+      ctx.font = `500 ${node.v > 99 || node.v < -9 ? '11' : '13'}px var(--font-sans, sans-serif)`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(node.v, x, y);
+      drawNode(node.l);
+      drawNode(node.r);
+    }
+    drawNode(root);
+  }
+
+  function setMsg(text, type = '') {
+    const el = document.getElementById('msg');
+    el.textContent = text;
+    el.className = 'msg' + (type ? ' ' + type : '');
+  }
+
+  function clearHighlight(delay = 1800) {
+    if (animFrame) clearTimeout(animFrame);
+    animFrame = setTimeout(() => { highlighted = {}; draw(); }, delay);
+  }
+
+  function doInsert() {
+    const v = parseInt(document.getElementById('val').value);
+    if (isNaN(v)) { setMsg('Digite um número válido.', 'err'); return; }
+    const r = search(root, v, []);
+    if (r.found) { setMsg(`Valor ${v} já existe na árvore.`, 'err'); return; }
+    const path = insertPath(root, v, []);
+    root = insert(root, v);
+    highlighted = {};
+    path.forEach(id => highlighted[id] = 'path');
+    const newSearch = search(root, v, []);
+    if (newSearch.found) highlighted[newSearch.node.id] = 'found';
+    draw();
+    setMsg(`${v} inserido com sucesso!`, 'ok');
+    clearHighlight();
+    document.getElementById('val').value = '';
+  }
+
+  function doSearch() {
+    const v = parseInt(document.getElementById('val').value);
+    if (isNaN(v)) { setMsg('Digite um número válido.', 'err'); return; }
+    const r = search(root, v, []);
+    highlighted = {};
+    r.path.forEach((id, i) => { highlighted[id] = i < r.path.length - 1 || !r.found ? 'path' : 'path'; });
+    if (r.found) { highlighted[r.node.id] = 'found'; setMsg(`Valor ${v} encontrado! (${r.path.length} passo${r.path.length > 1 ? 's' : ''})`, 'info'); }
+    else { setMsg(`Valor ${v} não encontrado.`, 'err'); }
+    draw();
+    clearHighlight();
+  }
+
+  function doDelete() {
+    const v = parseInt(document.getElementById('val').value);
+    if (isNaN(v)) { setMsg('Digite um número válido.', 'err'); return; }
+    const r = removeNode(root, v, []);
+    if (!r.removed) { setMsg(`Valor ${v} não existe na árvore.`, 'err'); return; }
+    highlighted = {};
+    r.path.forEach(id => highlighted[id] = 'path');
+    if (r.removedId) highlighted[r.removedId] = 'removed';
+    draw();
+    setMsg(`${v} removido!`, 'ok');
+    setTimeout(() => {
+      root = r.node;
+      highlighted = {};
+      draw();
+    }, 900);
+    document.getElementById('val').value = '';
+  }
+
+  function loadExample(vals) {
+    root = null;
+    highlighted = {};
+    vals.forEach(v => { root = insert(root, v); });
+    setMsg(vals.length ? `Exemplo carregado com ${vals.length} nós.` : 'Árvore limpa.', 'ok');
+    draw();
+    setTimeout(() => setMsg(''), 2000);
+  }
+
+  document.getElementById('val').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doInsert();
+  });
+
+  loadExample([50, 30, 70, 20, 40, 60, 80]);
+</script>
